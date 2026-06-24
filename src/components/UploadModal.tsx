@@ -3,7 +3,7 @@
 import { useState, useCallback, useRef } from "react";
 import { useDropzone } from "react-dropzone";
 import toast from "react-hot-toast";
-import { CATEGORIES, SEASONS, OCCASIONS } from "@/lib/constants";
+import { CATEGORIES, SEASONS, OCCASIONS, STYLES, FORMALITY_LEVELS, SILHOUETTES } from "@/lib/constants";
 
 type Step = "upload" | "analyzing" | "review";
 
@@ -15,6 +15,10 @@ interface AIResult {
   occasions: string[];
   material: string | null;
   brand: string | null;
+  style: string | null;
+  formality: number;
+  silhouette: string | null;
+  prendaType: string | null;
   confidence: number;
 }
 
@@ -25,6 +29,9 @@ interface FormData {
   occasions: string[];
   material: string | null;
   brand: string | null;
+  style: string | null;
+  formality: number;
+  silhouette: string | null;
 }
 
 interface UploadModalProps {
@@ -63,6 +70,9 @@ export default function UploadModal({ open, onClose, onSuccess }: UploadModalPro
     occasions: [],
     material: null,
     brand: null,
+    style: null,
+    formality: 3,
+    silhouette: null,
   });
   const cameraRef = useRef<HTMLInputElement>(null);
 
@@ -79,6 +89,9 @@ export default function UploadModal({ open, onClose, onSuccess }: UploadModalPro
       occasions: [],
       material: null,
       brand: null,
+      style: null,
+      formality: 3,
+      silhouette: null,
     });
   };
 
@@ -116,6 +129,9 @@ export default function UploadModal({ open, onClose, onSuccess }: UploadModalPro
             occasions: ai.occasions,
             material: ai.material,
             brand: ai.brand,
+            style: ai.style || null,
+            formality: ai.formality || 3,
+            silhouette: ai.silhouette || null,
           });
           setSelectedColors(ai.colors);
         }
@@ -364,6 +380,54 @@ export default function UploadModal({ open, onClose, onSuccess }: UploadModalPro
                       {o.icon} {o.label}
                     </button>
                   ))}
+                </div>
+              </div>
+
+              {/* Brand & Material */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-medium text-muted uppercase tracking-wider">Estilo</label>
+                  <select
+                    value={formData.style || ""}
+                    onChange={(e) => setFormData({ ...formData, style: e.target.value || null })}
+                    className="mt-1 w-full border border-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent"
+                  >
+                    <option value="">Sin definir</option>
+                    {STYLES.map((s) => (
+                      <option key={s.value} value={s.value}>{s.icon} {s.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-muted uppercase tracking-wider">Silueta</label>
+                  <select
+                    value={formData.silhouette || ""}
+                    onChange={(e) => setFormData({ ...formData, silhouette: e.target.value || null })}
+                    className="mt-1 w-full border border-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent"
+                  >
+                    <option value="">Sin definir</option>
+                    {SILHOUETTES.map((s) => (
+                      <option key={s.value} value={s.value}>{s.label}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Formality slider */}
+              <div>
+                <label className="text-xs font-medium text-muted uppercase tracking-wider">
+                  Formalidad: {FORMALITY_LEVELS.find(f => f.value === formData.formality)?.label}
+                </label>
+                <input
+                  type="range"
+                  min={1} max={5} step={1}
+                  value={formData.formality}
+                  onChange={(e) => setFormData({ ...formData, formality: parseInt(e.target.value) })}
+                  className="w-full mt-1.5 accent-accent"
+                />
+                <div className="flex justify-between text-[10px] text-muted">
+                  <span>Muy casual</span>
+                  <span>Muy formal</span>
                 </div>
               </div>
 

@@ -3,8 +3,8 @@
 import { useState, useEffect } from "react";
 import Image from "next/image";
 import AppShell from "@/components/AppShell";
-import { OUTFIT_LAYERS } from "@/lib/outfit-constants";
 import { CATEGORIES } from "@/lib/constants";
+import toast from "react-hot-toast";
 
 interface WeatherData {
   temp: number;
@@ -20,75 +20,61 @@ interface WeatherData {
   error?: string;
 }
 
-interface Item {
+interface OutfitItem {
   id: string;
   imageUrl: string;
   thumbnailUrl: string | null;
   category: string;
   brand: string | null;
-  seasons: string[];
-  inLaundry: boolean;
+  style: string | null;
+}
+
+interface OutfitCombo {
+  items: OutfitItem[];
+  score: number;
+  breakdown: { colorHarmony: number; styleCompat: number; occasionFit: number; weatherFit: number; visualBalance: number; total: number; bonuses: string[]; penalties: string[] };
 }
 
 export default function ClimaPage() {
   const [weather, setWeather] = useState<WeatherData | null>(null);
-  const [items, setItems] = useState<Item[]>([]);
-  const [suggestion, setSuggestion] = useState<Record<string, Item | null>>({});
+  const [outfits, setOutfits] = useState<OutfitCombo[]>([]);
+  const [current, setCurrent] = useState(0);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    Promise.all([
-      fetch("/api/weather").then((r) => r.json()),
-      fetch("/api/items").then((r) => r.json()),
-    ]).then(([w, allItems]) => {
-      setWeather(w);
-      const available = allItems.filter((i: Item) => !i.inLaundry);
-      setItems(available);
-
-      if (w.suggestion) {
-        const { weather: wType } = JSON.parse(w.suggestion);
-        const seasonMap: Record<string, string[]> = {
-          calor: ["verano", "todo_el_año"],
-          templado: ["entretiempo", "todo_el_año"],
-          frio: ["invierno", "todo_el_año"],
-        };
-        const validSeasons = seasonMap[wType] || ["todo_el_año"];
-
-        const result: Record<string, Item | null> = {};
-        OUTFIT_LAYERS.forEach((layer) => {
-          const pool = available.filter((item: Item) => {
-            if (!layer.categories.includes(item.category)) return false;
-            if (item.seasons.length > 0 && !item.seasons.some((s: string) => validSeasons.includes(s))) return false;
-            return true;
+    fetch("/api/weather")
+      .then((r) => r.json())
+      .then(async (w) => {
+        setWeather(w);
+        if (!w.error && w.suggestion) {
+          const { weather: wType } = JSON.parse(w.suggestion);
+          const res = await fetch("/api/engine", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ weather: wType, occasion: "casual", maxResults: 5, minScore: 55 }),
           });
-          result[layer.key] = pool.length > 0 ? pool[Math.floor(Math.random() * pool.length)] : null;
-        });
-        setSuggestion(result);
-      }
-      setLoading(false);
-    });
+          const data = await res.json();
+          setOutfits(data);
+        }
+        setLoading(false);
+      });
   }, []);
 
-  const regenerate = () => {
-    if (!weather?.suggestion) return;
-    const { weather: wType } = JSON.parse(weather.suggestion);
-    const seasonMap: Record<string, string[]> = {
-      calor: ["verano", "todo_el_año"],
-      templado: ["entretiempo", "todo_el_año"],
-      frio: ["invierno", "todo_el_año"],
-    };
-    const validSeasons = seasonMap[wType] || ["todo_el_año"];
+  const combo = outfits[current];
 
-    const result: Record<string, Item | null> = {};
-    OUTFIT_LAYERS.forEach((layer) => {
-      const pool = items.filter((item) => {
-        if (!layer.categories.includes(item.category)) return false;
-        if (item.seasons.length > 0 && !item.seasons.some((s) => validSeasons.includes(s))) return false;
-        return true;
-      });
-      result[layer.key] = pool.length > 0 ? pool[Math.floor(Math.random() * pool.length)] : null;
+  const nextOutfit = () => {
+    setCurrent((prev) => (prev + 1) % outfits.length);
+  };
+
+  const saveOutfit = async () => {
+    if (!combo) return;
+    const name = `Clima ${new Date().toLocaleDateString("es-AR", { day: "numeric", month: "short" })} (${combo.score}pts)`;
+    await fetch("/api/outfits", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, weather: weather?.temp ? (weather.temp >= 28 ? "calor" : weather.temp >= 18 ? "templado" : "frio") : null, itemIds: combo.items.map((i) => i.id) }),
     });
-    setSuggestion(result);
+    toast.success("Outfit guardado");
   };
 
   if (loading) {
@@ -112,58 +98,67 @@ export default function ClimaPage() {
               <p className="text-4xl font-bold font-display">{weather.temp}°C</p>
               <p className="text-sm text-muted capitalize mt-1">{weather.description}</p>
               <p className="text-xs text-muted mt-1">Sensación {weather.feelsLike}°C</p>
-
               <div className="flex justify-center gap-6 mt-4 text-sm">
-                <div>
-                  <p className="text-muted text-xs">Máx</p>
-                  <p className="font-medium">{weather.maxTemp}°</p>
-                </div>
-                <div>
-                  <p className="text-muted text-xs">Mín</p>
-                  <p className="font-medium">{weather.minTemp}°</p>
-                </div>
-                <div>
-                  <p className="text-muted text-xs">Lluvia</p>
-                  <p className="font-medium">{weather.chanceOfRain}%</p>
-                </div>
-                <div>
-                  <p className="text-muted text-xs">Viento</p>
-                  <p className="font-medium">{weather.windKmph} km/h</p>
-                </div>
+                <div><p className="text-muted text-xs">Máx</p><p className="font-medium">{weather.maxTemp}°</p></div>
+                <div><p className="text-muted text-xs">Mín</p><p className="font-medium">{weather.minTemp}°</p></div>
+                <div><p className="text-muted text-xs">Lluvia</p><p className="font-medium">{weather.chanceOfRain}%</p></div>
+                <div><p className="text-muted text-xs">Viento</p><p className="font-medium">{weather.windKmph} km/h</p></div>
               </div>
-
               {weather.chanceOfRain > 40 && (
-                <div className="mt-4 tag-pill bg-blue-50 text-blue-700 text-xs">
-                  🌂 Llevá paraguas
-                </div>
+                <div className="mt-4 tag-pill bg-blue-50 text-blue-700 text-xs">🌂 Llevá paraguas</div>
               )}
             </div>
 
-            {/* Suggestion */}
-            <div className="flex items-center justify-between mb-3">
-              <h2 className="font-display font-bold text-base">Sugerencia para hoy</h2>
-              <button onClick={regenerate} className="text-sm text-accent hover:underline">🔄 Otra</button>
-            </div>
-
-            <div className="space-y-2">
-              {OUTFIT_LAYERS.map((layer) => {
-                const item = suggestion[layer.key];
-                if (!item) return null;
-                const cat = CATEGORIES[item.category];
-
-                return (
-                  <div key={layer.key} className="card p-3 flex items-center gap-3">
-                    <div className="w-14 h-14 rounded-xl overflow-hidden border border-border relative shrink-0">
-                      <Image src={item.thumbnailUrl || item.imageUrl} alt="" fill className="object-cover" sizes="56px" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium">{cat?.icon} {cat?.label}</p>
-                      {item.brand && <p className="text-xs text-muted">{item.brand}</p>}
-                    </div>
+            {/* Engine suggestion */}
+            {combo ? (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <h2 className="font-display font-bold text-base">Sugerencia para hoy</h2>
+                  <div className="flex items-center gap-2">
+                    <span className={`text-sm font-bold ${combo.score >= 80 ? "text-green-600" : "text-accent"}`}>
+                      {combo.score}/100
+                    </span>
+                    {outfits.length > 1 && (
+                      <button onClick={nextOutfit} className="text-xs text-accent hover:underline">Otra →</button>
+                    )}
                   </div>
-                );
-              })}
-            </div>
+                </div>
+
+                <div className="space-y-2">
+                  {combo.items.map((item) => {
+                    const cat = CATEGORIES[item.category];
+                    return (
+                      <div key={item.id} className="card p-3 flex items-center gap-3">
+                        <div className="w-14 h-14 rounded-xl overflow-hidden border border-border relative shrink-0">
+                          <Image src={item.thumbnailUrl || item.imageUrl} alt="" fill className="object-cover" sizes="56px" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium">{cat?.icon} {cat?.label}</p>
+                          {item.brand && <p className="text-xs text-muted">{item.brand}</p>}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {combo.breakdown.bonuses.length > 0 && (
+                  <div className="space-y-1">
+                    {combo.breakdown.bonuses.map((b, i) => (
+                      <p key={i} className="text-[11px] text-green-600">✓ {b}</p>
+                    ))}
+                  </div>
+                )}
+
+                <button onClick={saveOutfit} className="w-full btn-secondary text-sm">
+                  💾 Guardar outfit
+                </button>
+              </div>
+            ) : (
+              <div className="text-center py-8">
+                <p className="text-4xl mb-2">👕</p>
+                <p className="text-sm text-muted">Subí más prendas para recibir sugerencias según el clima.</p>
+              </div>
+            )}
           </>
         ) : (
           <div className="text-center py-16">

@@ -54,6 +54,10 @@ export async function POST(req: NextRequest) {
         occasions: aiResult?.occasions || [],
         material: aiResult?.material || null,
         brand: aiResult?.brand || null,
+        style: aiResult?.style || null,
+        formality: aiResult?.formality || 3,
+        silhouette: aiResult?.silhouette || null,
+        prendaType: aiResult?.prendaType || null,
       },
     });
 

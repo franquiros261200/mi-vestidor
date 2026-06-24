@@ -47,4 +47,29 @@ export const OCCASIONS = [
   { value: "playa", label: "Playa", icon: "🏖️" },
 ];
 
+export const STYLES = [
+  { value: "casual", label: "Casual", icon: "😎" },
+  { value: "formal", label: "Formal", icon: "💼" },
+  { value: "streetwear", label: "Streetwear", icon: "🛹" },
+  { value: "deportivo", label: "Deportivo", icon: "🏃" },
+  { value: "elegante", label: "Elegante", icon: "✨" },
+  { value: "smart_casual", label: "Smart Casual", icon: "👔" },
+  { value: "minimalista", label: "Minimalista", icon: "◻️" },
+];
+
+export const FORMALITY_LEVELS = [
+  { value: 1, label: "Muy casual" },
+  { value: 2, label: "Casual" },
+  { value: 3, label: "Intermedio" },
+  { value: 4, label: "Formal" },
+  { value: 5, label: "Muy formal" },
+];
+
+export const SILHOUETTES = [
+  { value: "slim", label: "Slim" },
+  { value: "regular", label: "Regular" },
+  { value: "oversize", label: "Oversize" },
+  { value: "wide", label: "Wide" },
+];
+
 export type CategoryKey = keyof typeof CATEGORIES;

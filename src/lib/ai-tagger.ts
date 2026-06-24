@@ -8,6 +8,10 @@ export interface AITagResult {
   occasions: string[];
   material: string | null;
   brand: string | null;
+  style: string | null;
+  formality: number;
+  silhouette: string | null;
+  prendaType: string | null;
   confidence: number;
 }
 
@@ -21,14 +25,17 @@ const CATEGORIES = [
   "vestido", "enterito", "saco", "blazer",
 ];
 
+const STYLES = ["casual", "formal", "streetwear", "deportivo", "elegante", "smart_casual", "minimalista"];
+const SILHOUETTES = ["slim", "regular", "oversize", "wide"];
+const PRENDA_TYPES = ["superior", "inferior", "calzado", "abrigo", "accesorio"];
 const SEASONS = ["verano", "invierno", "entretiempo", "todo_el_año"];
-const OCCASIONS = ["casual", "formal", "deporte", "salida", "trabajo", "playa"];
+const OCCASIONS = ["casual", "formal", "deporte", "salida", "trabajo", "playa", "facultad", "boliche", "cita", "gym"];
 
 export async function analyzeClothingImage(imageUrl: string, apiKey: string): Promise<AITagResult> {
   const anthropic = new Anthropic({ apiKey });
   const response = await anthropic.messages.create({
     model: "claude-sonnet-4-6",
-    max_tokens: 500,
+    max_tokens: 600,
     messages: [
       {
         role: "user",
@@ -48,6 +55,10 @@ export async function analyzeClothingImage(imageUrl: string, apiKey: string): Pr
   "occasions": array de [${OCCASIONS.join(", ")}],
   "material": material estimado ("algodón", "poliéster", "cuero", "jean") o null,
   "brand": marca visible o null,
+  "style": una de [${STYLES.join(", ")}],
+  "formality": número 1 a 5 (1=muy casual, 5=muy formal),
+  "silhouette": una de [${SILHOUETTES.join(", ")}],
+  "prendaType": una de [${PRENDA_TYPES.join(", ")}],
   "confidence": 0.0 a 1.0 qué tan seguro estás
 }`,
           },
@@ -61,7 +72,6 @@ export async function analyzeClothingImage(imageUrl: string, apiKey: string): Pr
   try {
     return JSON.parse(text.trim()) as AITagResult;
   } catch {
-    // Fallback si el parse falla
     return {
       category: "remera",
       subcategory: null,
@@ -70,6 +80,10 @@ export async function analyzeClothingImage(imageUrl: string, apiKey: string): Pr
       occasions: ["casual"],
       material: null,
       brand: null,
+      style: "casual",
+      formality: 3,
+      silhouette: "regular",
+      prendaType: "superior",
       confidence: 0,
     };
   }

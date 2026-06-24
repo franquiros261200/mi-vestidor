@@ -14,7 +14,7 @@ const MENU_ITEMS = [
   { href: "/", label: "Mi Vestidor", icon: "👕", description: "Tu catálogo de prendas" },
   { href: "/outfits", label: "Outfits", icon: "👔", description: "Armá y guardá combos" },
   { href: "/calendario", label: "Calendario", icon: "📅", description: "Planificá qué ponerte" },
-  { href: "/random", label: "Outfit Random", icon: "🎲", description: "No sé qué ponerme" },
+  { href: "/random", label: "Fashion Engine", icon: "🎲", description: "Outfits inteligentes con puntaje" },
   { href: "/clima", label: "Clima + Sugerencia", icon: "🌤️", description: "Outfit según el clima" },
   { divider: true },
   { href: "/laundry", label: "Laundry", icon: "🧺", description: "Qué está en el lavarropas" },

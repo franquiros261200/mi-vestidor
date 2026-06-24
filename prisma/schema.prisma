@@ -74,6 +74,12 @@ model Item {
   colors        String[]
   colorNames    String[]
 
+  // Fashion Engine attributes
+  style         String?      // casual, formal, streetwear, deportivo, elegante, smart_casual, minimalista
+  formality     Int          @default(3) // 1=muy casual ... 5=muy formal
+  silhouette    String?      // slim, regular, oversize, wide
+  prendaType    String?      // superior, inferior, calzado, abrigo, accesorio
+
   brand         String?
   size          String?
   material      String?
