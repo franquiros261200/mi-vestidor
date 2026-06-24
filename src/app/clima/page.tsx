@@ -17,6 +17,7 @@ interface WeatherData {
   minTemp: number;
   chanceOfRain: number;
   suggestion: string;
+  error?: string;
 }
 
 interface Item {
