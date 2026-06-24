@@ -1,0 +1,145 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ── NextAuth ──────────────────────────────────────────
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ── Core Models ───────────────────────────────────────
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?
+  accounts      Account[]
+  sessions      Session[]
+  items         Item[]
+  outfits       Outfit[]
+
+  // API keys opcionales (el usuario las carga si quiere IA)
+  anthropicKey  String?
+  
+  createdAt     DateTime  @default(now())
+}
+
+model Item {
+  id            String       @id @default(cuid())
+  userId        String
+  user          User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Imagen
+  imageUrl      String
+  imagePublicId String       // Cloudinary public_id
+  thumbnailUrl  String?
+
+  // Clasificación
+  category      String       // remera, pantalon, campera, etc.
+  subcategory   String?
+  colors        String[]     // hex codes detectados por IA
+  colorNames    String[]     // nombres: "negro", "azul marino"
+
+  // Detalles
+  brand         String?
+  size          String?
+  material      String?
+  
+  // Contexto
+  seasons       String[]     // verano, invierno, entretiempo
+  occasions     String[]     // casual, formal, deporte, salida
+
+  // Tracking
+  purchasePrice Float?
+  timesWorn     Int          @default(0)
+  lastWornAt    DateTime?
+  favorite      Boolean      @default(false)
+  archived      Boolean      @default(false)
+
+  // Relations
+  outfitItems   OutfitItem[]
+  tags          Tag[]
+
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  @@index([userId])
+  @@index([userId, category])
+}
+
+model Outfit {
+  id          String       @id @default(cuid())
+  userId      String
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  name        String
+  occasion    String?
+  weather     String?      // soleado, nublado, lluvia, frio
+  rating      Int?         // 1-5
+  notes       String?
+
+  items       OutfitItem[]
+  plannedDate DateTime?    // Para el calendario
+
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@index([userId])
+}
+
+model OutfitItem {
+  id       String @id @default(cuid())
+  outfitId String
+  itemId   String
+  outfit   Outfit @relation(fields: [outfitId], references: [id], onDelete: Cascade)
+  item     Item   @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  layer    Int    @default(0) // orden de capa
+
+  @@unique([outfitId, itemId])
+}
+
+model Tag {
+  id    String @id @default(cuid())
+  name  String
+  items Item[]
+
+  @@unique([name])
+}

@@ -1,0 +1,44 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url("https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,700;1,9..40,400&family=Inter:wght@400;500;600&display=swap");
+
+@layer base {
+  body {
+    @apply bg-surface text-ink antialiased;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply bg-accent text-white px-4 py-2.5 rounded-lg font-medium
+           hover:bg-accent-hover transition-colors duration-150
+           active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none;
+  }
+
+  .btn-secondary {
+    @apply bg-white text-ink border border-border px-4 py-2.5 rounded-lg font-medium
+           hover:bg-tag transition-colors duration-150
+           active:scale-[0.98];
+  }
+
+  .card {
+    @apply bg-card rounded-card border border-border shadow-sm;
+  }
+
+  .tag-pill {
+    @apply inline-flex items-center gap-1 px-2.5 py-1 rounded-full
+           bg-tag text-sm text-muted;
+  }
+}
+
+/* Upload dropzone pulse */
+@keyframes dropzone-pulse {
+  0%, 100% { border-color: theme("colors.border"); }
+  50% { border-color: theme("colors.accent"); }
+}
+
+.dropzone-active {
+  animation: dropzone-pulse 1.5s ease-in-out infinite;
+}
