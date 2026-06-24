@@ -46,20 +46,18 @@ model VerificationToken {
 // ── Core Models ───────────────────────────────────────
 
 model User {
-  id            String    @id @default(cuid())
+  id            String         @id @default(cuid())
   name          String?
-  email         String?   @unique
+  email         String?        @unique
   emailVerified DateTime?
   image         String?
   accounts      Account[]
   sessions      Session[]
   items         Item[]
   outfits       Outfit[]
-
-  // API keys opcionales (el usuario las carga si quiere IA)
+  wishlistItems WishlistItem[]
   anthropicKey  String?
-  
-  createdAt     DateTime  @default(now())
+  createdAt     DateTime       @default(now())
 }
 
 model Item {
@@ -67,34 +65,29 @@ model Item {
   userId        String
   user          User         @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  // Imagen
   imageUrl      String
-  imagePublicId String       // Cloudinary public_id
+  imagePublicId String
   thumbnailUrl  String?
 
-  // Clasificación
-  category      String       // remera, pantalon, campera, etc.
+  category      String
   subcategory   String?
-  colors        String[]     // hex codes detectados por IA
-  colorNames    String[]     // nombres: "negro", "azul marino"
+  colors        String[]
+  colorNames    String[]
 
-  // Detalles
   brand         String?
   size          String?
   material      String?
   
-  // Contexto
-  seasons       String[]     // verano, invierno, entretiempo
-  occasions     String[]     // casual, formal, deporte, salida
+  seasons       String[]
+  occasions     String[]
 
-  // Tracking
   purchasePrice Float?
   timesWorn     Int          @default(0)
   lastWornAt    DateTime?
   favorite      Boolean      @default(false)
   archived      Boolean      @default(false)
+  inLaundry     Boolean      @default(false)
 
-  // Relations
   outfitItems   OutfitItem[]
   tags          Tag[]
 
@@ -112,17 +105,19 @@ model Outfit {
   
   name        String
   occasion    String?
-  weather     String?      // soleado, nublado, lluvia, frio
-  rating      Int?         // 1-5
+  weather     String?
+  rating      Int?
   notes       String?
+  shareId     String?      @unique
 
   items       OutfitItem[]
-  plannedDate DateTime?    // Para el calendario
+  plannedDate DateTime?
 
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
 
   @@index([userId])
+  @@index([shareId])
 }
 
 model OutfitItem {
@@ -131,9 +126,29 @@ model OutfitItem {
   itemId   String
   outfit   Outfit @relation(fields: [outfitId], references: [id], onDelete: Cascade)
   item     Item   @relation(fields: [itemId], references: [id], onDelete: Cascade)
-  layer    Int    @default(0) // orden de capa
+  layer    Int    @default(0)
 
   @@unique([outfitId, itemId])
+}
+
+model WishlistItem {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  name        String
+  category    String?
+  imageUrl    String?
+  link        String?
+  price       Float?
+  priority    Int      @default(0)
+  purchased   Boolean  @default(false)
+  notes       String?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId])
 }
 
 model Tag {
