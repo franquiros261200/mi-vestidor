@@ -120,7 +120,7 @@ export function scoreColorHarmony(hexColors: string[][]): {
   details: string;
 } {
   // Flatten all colors from all items, deduplicate
-  const allColors = [...new Set(hexColors.flat().filter((c) => c && c.startsWith("#")))];
+  const allColors = Array.from(new Set(hexColors.flat().filter((c) => c && c.startsWith("#"))));
 
   if (allColors.length === 0) {
     return { score: 15, harmony: "all_neutral", details: "Sin colores definidos" };
