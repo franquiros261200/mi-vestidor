@@ -1,7 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useState } from "react";
 import Image from "next/image";
 import AppShell from "@/components/AppShell";
 import { CATEGORIES } from "@/lib/constants";
@@ -33,10 +32,14 @@ interface OutfitCombo {
   items: OutfitItem[];
   score: number;
   breakdown: ScoreBreakdown;
+  aiReasoning?: string;
+  source?: string;
 }
 
+type Mode = "rules" | "ai";
+
 export default function RandomPage() {
-  const router = useRouter();
+  const [mode, setMode] = useState<Mode>("ai");
   const [results, setResults] = useState<OutfitCombo[]>([]);
   const [current, setCurrent] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -44,34 +47,43 @@ export default function RandomPage() {
   const [weather, setWeather] = useState<string | null>(null);
   const [rolled, setRolled] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [justification, setJustification] = useState<string | null>(null);
-  const [loadingJustify, setLoadingJustify] = useState(false);
 
-  const rollEngine = async () => {
+  const generate = async () => {
     setLoading(true);
-    setJustification(null);
-    const res = await fetch("/api/engine", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ occasion, weather, maxResults: 8, minScore: 60 }),
-    });
-    const data = await res.json();
-    setResults(data);
-    setCurrent(0);
-    setRolled(true);
+    try {
+      const endpoint = mode === "ai" ? "/api/engine/ai" : "/api/engine";
+      const body = mode === "ai"
+        ? { occasion, weather, count: 3 }
+        : { occasion, weather, maxResults: 8, minScore: 60 };
+
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        toast.error(data.error || "Error");
+        setResults([]);
+      } else {
+        setResults(data);
+        setCurrent(0);
+      }
+      setRolled(true);
+    } catch (err: any) {
+      toast.error(err.message || "Error");
+    }
     setLoading(false);
   };
 
-  const nextOutfit = () => {
-    setJustification(null);
-    setCurrent((prev) => (prev + 1) % results.length);
-  };
+  const nextOutfit = () => setCurrent((prev) => (prev + 1) % results.length);
 
   const saveAsOutfit = async () => {
     const combo = results[current];
     if (!combo) return;
     setSaving(true);
-    const name = `Engine ${new Date().toLocaleDateString("es-AR", { day: "numeric", month: "short" })} (${combo.score}pts)`;
+    const name = `${mode === "ai" ? "IA" : "Engine"} ${new Date().toLocaleDateString("es-AR", { day: "numeric", month: "short" })} (${combo.score}pts)`;
     await fetch("/api/outfits", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -81,29 +93,37 @@ export default function RandomPage() {
     setSaving(false);
   };
 
-  const getJustification = async () => {
-    const combo = results[current];
-    if (!combo) return;
-    setLoadingJustify(true);
-    try {
-      const res = await fetch("/api/engine/justify", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ items: combo.items, score: combo.score, breakdown: combo.breakdown, context: { occasion, weather } }),
-      });
-      const data = await res.json();
-      setJustification(data.justification || data.error || "No disponible");
-    } catch {
-      setJustification("Necesitás configurar tu API key en ⚙️ Configuración");
-    }
-    setLoadingJustify(false);
-  };
-
   const combo = results[current];
 
   return (
     <AppShell title="Fashion Engine">
       <div className="max-w-md mx-auto px-4 py-6">
+        {/* Mode selector */}
+        <div className="flex gap-1 bg-tag rounded-lg p-1 mb-5">
+          <button
+            onClick={() => setMode("ai")}
+            className={`flex-1 py-2 text-sm rounded-md font-medium transition-colors ${
+              mode === "ai" ? "bg-white shadow-sm text-ink" : "text-muted"
+            }`}
+          >
+            🧠 IA
+          </button>
+          <button
+            onClick={() => setMode("rules")}
+            className={`flex-1 py-2 text-sm rounded-md font-medium transition-colors ${
+              mode === "rules" ? "bg-white shadow-sm text-ink" : "text-muted"
+            }`}
+          >
+            🎲 Reglas
+          </button>
+        </div>
+
+        <p className="text-xs text-muted text-center mb-5">
+          {mode === "ai"
+            ? "Claude analiza tu guardarropa y arma outfits creativos con teoría de moda real. Consume tu API key (~$0.01 por generación)."
+            : "Motor matemático que evalúa miles de combinaciones y las puntúa. Gratis e instantáneo."}
+        </p>
+
         {/* Filters */}
         <div className="space-y-3 mb-6">
           <div>
@@ -130,19 +150,17 @@ export default function RandomPage() {
           </div>
         </div>
 
-        {/* Generate button */}
-        <button onClick={rollEngine} disabled={loading}
+        <button onClick={generate} disabled={loading}
           className="w-full btn-primary py-4 text-lg mb-6 flex items-center justify-center gap-2">
           {loading ? (
-            <><div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" /> Analizando...</>
-          ) : rolled ? "🎲 Generar de nuevo" : "🎲 ¿Qué me pongo?"}
+            <><div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" /> {mode === "ai" ? "Claude pensando..." : "Analizando..."}</>
+          ) : rolled ? "🔄 Generar de nuevo" : mode === "ai" ? "🧠 Que Claude arme mis outfits" : "🎲 ¿Qué me pongo?"}
         </button>
 
-        {/* Results */}
         {rolled && results.length === 0 && !loading && (
           <div className="text-center py-8">
             <p className="text-4xl mb-2">😕</p>
-            <p className="text-sm text-muted">No se encontraron outfits con buen puntaje. Probá con otros filtros o subí más prendas.</p>
+            <p className="text-sm text-muted">No se encontraron outfits. Probá con otros filtros o subí más prendas.</p>
           </div>
         )}
 
@@ -156,17 +174,24 @@ export default function RandomPage() {
                     combo.score >= 85 ? "text-green-600" : combo.score >= 70 ? "text-accent" : "text-yellow-600"
                   }`}>{combo.score}</span>
                   <span className="text-sm text-muted">/100</span>
+                  {combo.source === "ai" && <span className="tag-pill text-[10px] bg-purple-50 text-purple-700">IA</span>}
                 </div>
                 <p className="text-[11px] text-muted">Outfit {current + 1} de {results.length}</p>
               </div>
               {results.length > 1 && (
-                <button onClick={nextOutfit} className="btn-secondary text-sm">
-                  Siguiente →
-                </button>
+                <button onClick={nextOutfit} className="btn-secondary text-sm">Siguiente →</button>
               )}
             </div>
 
-            {/* Score breakdown */}
+            {/* AI reasoning */}
+            {combo.aiReasoning && (
+              <div className="card p-4 bg-purple-50/50 border-purple-200">
+                <p className="text-xs font-medium text-purple-900 mb-1">🧠 Por qué este outfit</p>
+                <p className="text-sm text-purple-950 leading-relaxed">{combo.aiReasoning}</p>
+              </div>
+            )}
+
+            {/* Breakdown */}
             <div className="card p-4 space-y-2">
               {[
                 { label: "Colores", value: combo.breakdown.colorHarmony, max: 25 },
@@ -205,27 +230,18 @@ export default function RandomPage() {
                     <div className="flex-1">
                       <p className="text-sm font-medium">{cat?.icon} {cat?.label}</p>
                       {item.brand && <p className="text-xs text-muted">{item.brand}</p>}
-                      {item.style && <span className="tag-pill text-[10px] mt-1">{item.style}</span>}
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {item.colorNames.slice(0, 3).map((c, i) => (
+                          <span key={i} className="tag-pill text-[10px] capitalize">{c}</span>
+                        ))}
+                        {item.style && <span className="tag-pill text-[10px]">{item.style}</span>}
+                      </div>
                     </div>
                   </div>
                 );
               })}
             </div>
 
-            {/* AI Justification */}
-            <button onClick={getJustification} disabled={loadingJustify}
-              className="w-full btn-secondary text-sm">
-              {loadingJustify ? "Pensando..." : justification ? "🧠 Pedir otra opinión" : "🧠 ¿Por qué este outfit?"}
-            </button>
-
-            {justification && (
-              <div className="card p-4 bg-tag/50">
-                <p className="text-xs font-medium text-muted mb-1">🧠 Opinión IA</p>
-                <p className="text-sm leading-relaxed">{justification}</p>
-              </div>
-            )}
-
-            {/* Save */}
             <div className="flex gap-3">
               <button onClick={saveAsOutfit} disabled={saving} className="btn-primary flex-1">
                 {saving ? "Guardando..." : "💾 Guardar outfit"}

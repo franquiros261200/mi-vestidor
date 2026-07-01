@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Image from "next/image";
 import { CATEGORIES } from "@/lib/constants";
+import EditItemModal from "./EditItemModal";
 import toast from "react-hot-toast";
 
 interface Item {
@@ -17,6 +18,9 @@ interface Item {
   seasons: string[];
   occasions: string[];
   material: string | null;
+  style: string | null;
+  formality: number;
+  silhouette: string | null;
   favorite: boolean;
   timesWorn: number;
   lastWornAt: string | null;
@@ -31,6 +35,7 @@ interface ItemCardProps {
 export default function ItemCard({ item, onUpdate }: ItemCardProps) {
   const [expanded, setExpanded] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [editing, setEditing] = useState(false);
   const cat = CATEGORIES[item.category];
 
   const toggleFavorite = async (e: React.MouseEvent) => {
@@ -212,6 +217,13 @@ export default function ItemCard({ item, onUpdate }: ItemCardProps) {
                   Me lo puse hoy
                 </button>
                 <button
+                  onClick={() => { setExpanded(false); setEditing(true); }}
+                  className="btn-secondary px-3 text-sm"
+                  title="Editar"
+                >
+                  ✏️
+                </button>
+                <button
                   onClick={reanalyze}
                   disabled={reanalyzing}
                   className="btn-secondary px-3 text-sm"
@@ -230,6 +242,15 @@ export default function ItemCard({ item, onUpdate }: ItemCardProps) {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Edit modal */}
+      {editing && (
+        <EditItemModal
+          item={item}
+          onClose={() => setEditing(false)}
+          onSave={onUpdate}
+        />
       )}
     </>
   );

@@ -17,6 +17,9 @@ interface Item {
   seasons: string[];
   occasions: string[];
   material: string | null;
+  style: string | null;
+  formality: number;
+  silhouette: string | null;
   favorite: boolean;
   timesWorn: number;
   lastWornAt: string | null;

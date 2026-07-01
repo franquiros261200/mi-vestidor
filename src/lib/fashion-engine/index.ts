@@ -1,4 +1,4 @@
-export { generateOutfits, quickRecommend } from "./generator";
+export { generateOutfits } from "./generator";
 export { scoreOutfit } from "./scoring";
 export { scoreColorHarmony } from "./color-theory";
 export type { FashionItem, OutfitCombo, ScoreBreakdown, EngineContext } from "./types";
