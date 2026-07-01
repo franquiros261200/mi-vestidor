@@ -5,7 +5,8 @@ import { prisma } from "@/lib/prisma";
 import { uploadImage } from "@/lib/cloudinary";
 
 // Solo sube a Cloudinary y guarda en DB — rápido, sin IA
-export const maxDuration = 30;
+export const maxDuration = 60;
+export const runtime = "nodejs";
 
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);

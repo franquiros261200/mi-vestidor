@@ -4,7 +4,8 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { analyzeClothingImage } from "@/lib/ai-tagger";
 
-export const maxDuration = 30;
+export const maxDuration = 60;
+export const runtime = "nodejs";
 
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);

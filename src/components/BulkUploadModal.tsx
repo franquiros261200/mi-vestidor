@@ -23,14 +23,18 @@ interface UploadJob {
   error?: string;
 }
 
-const CONCURRENCY = 3; // subir 3 en paralelo
+// Procesar UNA a la vez para no romper Neon ni Vercel
+const CONCURRENCY = 1;
+const RETRY_ATTEMPTS = 2;
+const RETRY_DELAY = 2000;
 
 export default function BulkUploadModal({ open, onClose, onSuccess }: BulkUploadModalProps) {
   const [jobs, setJobs] = useState<UploadJob[]>([]);
   const [running, setRunning] = useState(false);
   const cameraRef = useRef<HTMLInputElement>(null);
+  const cancelRef = useRef(false);
 
-  const compressImage = (file: File, maxWidth = 1200): Promise<string> => {
+  const compressImage = (file: File, maxWidth = 1000): Promise<string> => {
     return new Promise((resolve, reject) => {
       const img = new window.Image();
       const reader = new FileReader();
@@ -44,14 +48,37 @@ export default function BulkUploadModal({ open, onClose, onSuccess }: BulkUpload
           canvas.height = h;
           const ctx = canvas.getContext("2d")!;
           ctx.drawImage(img, 0, 0, w, h);
-          resolve(canvas.toDataURL("image/jpeg", 0.8));
+          resolve(canvas.toDataURL("image/jpeg", 0.75));
         };
-        img.onerror = reject;
+        img.onerror = () => reject(new Error("Imagen inválida"));
         img.src = e.target?.result as string;
       };
-      reader.onerror = reject;
+      reader.onerror = () => reject(new Error("Error leyendo archivo"));
       reader.readAsDataURL(file);
     });
+  };
+
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  // Retry wrapper
+  const fetchWithRetry = async (url: string, options: RequestInit, attempts = RETRY_ATTEMPTS): Promise<Response> => {
+    let lastError: any;
+    for (let i = 0; i <= attempts; i++) {
+      try {
+        const res = await fetch(url, options);
+        if (res.ok) return res;
+        // 429/500/502/503/504: reintentar
+        if ([429, 500, 502, 503, 504].includes(res.status) && i < attempts) {
+          await sleep(RETRY_DELAY * (i + 1));
+          continue;
+        }
+        return res;
+      } catch (err) {
+        lastError = err;
+        if (i < attempts) await sleep(RETRY_DELAY * (i + 1));
+      }
+    }
+    throw lastError || new Error("Falló después de reintentos");
   };
 
   const processJob = async (
@@ -59,88 +86,103 @@ export default function BulkUploadModal({ open, onClose, onSuccess }: BulkUpload
     updateJob: (patch: Partial<UploadJob>) => void
   ) => {
     try {
+      if (cancelRef.current) return;
+
       updateJob({ status: "uploading", progress: 10 });
       const base64 = await compressImage(job.file);
       updateJob({ progress: 30 });
 
-      // Paso 1: Cloudinary + DB
-      const uploadRes = await fetch("/api/upload", {
+      if (cancelRef.current) return;
+
+      // Paso 1: Cloudinary + DB (con reintentos)
+      const uploadRes = await fetchWithRetry("/api/upload", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ image: base64 }),
       });
 
-      if (!uploadRes.ok) throw new Error("Error al subir");
+      if (!uploadRes.ok) {
+        const err = await uploadRes.json().catch(() => ({}));
+        throw new Error(err.error || `Error ${uploadRes.status}`);
+      }
+
       const uploadData = await uploadRes.json();
       updateJob({ progress: 60, status: "analyzing" });
 
-      // Paso 2: IA (no bloqueante, si falla queda sin tags)
+      if (cancelRef.current) {
+        // Ya subió a Cloudinary, no es un error
+        updateJob({ status: "done", progress: 100 });
+        return;
+      }
+
+      // Paso 2: IA (no crítico, si falla la prenda queda igual)
       try {
         const aiRes = await fetch("/api/ai-tag", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ image: base64, itemId: uploadData.item.id }),
         });
-        const aiData = await aiRes.json();
-        if (aiData.hasAI && aiData.aiSuggestions) {
-          const ai = aiData.aiSuggestions;
-          updateJob({
-            status: "done",
-            progress: 100,
-            category: ai.category,
-            colorNames: ai.colors?.map((c: any) => c.name) || [],
-            brand: ai.brand,
-          });
-          return;
+
+        if (aiRes.ok) {
+          const aiData = await aiRes.json();
+          if (aiData.hasAI && aiData.aiSuggestions) {
+            const ai = aiData.aiSuggestions;
+            updateJob({
+              status: "done",
+              progress: 100,
+              category: ai.category,
+              colorNames: ai.colors?.map((c: any) => c.name) || [],
+              brand: ai.brand,
+            });
+            return;
+          }
         }
       } catch {
-        // IA falló, pero la prenda ya está subida
+        // IA falló, la prenda queda subida sin tags
       }
 
-      updateJob({ status: "done", progress: 100 });
+      updateJob({ status: "done", progress: 100, category: "sin clasificar" });
     } catch (err: any) {
-      updateJob({ status: "error", error: err.message || "Error" });
+      updateJob({ status: "error", error: err.message || "Error desconocido" });
     }
   };
 
-  const runBatch = async (initialJobs: UploadJob[]) => {
+  const runSequential = async (initialJobs: UploadJob[]) => {
     setRunning(true);
+    cancelRef.current = false;
 
-    // Cola de trabajo con concurrencia limitada
-    const queue = [...initialJobs];
-    const workers: Promise<void>[] = [];
+    for (const job of initialJobs) {
+      if (cancelRef.current) break;
 
-    for (let i = 0; i < CONCURRENCY; i++) {
-      workers.push((async () => {
-        while (queue.length > 0) {
-          const job = queue.shift();
-          if (!job) break;
-          await processJob(job, (patch) => {
-            setJobs((prev) => prev.map((j) => (j.id === job.id ? { ...j, ...patch } : j)));
-          });
-        }
-      })());
+      await processJob(job, (patch) => {
+        setJobs((prev) => prev.map((j) => (j.id === job.id ? { ...j, ...patch } : j)));
+      });
+
+      // Pausa entre prendas para no saturar
+      await sleep(500);
     }
 
-    await Promise.all(workers);
     setRunning(false);
-    toast.success("Todas las prendas procesadas");
-    onSuccess();
+    if (!cancelRef.current) {
+      toast.success("Todas las prendas procesadas");
+      onSuccess();
+    }
   };
 
   const onDrop = useCallback(async (files: File[]) => {
-    const newJobs: UploadJob[] = await Promise.all(
-      files.map(async (file) => ({
-        id: `${Date.now()}-${Math.random()}`,
-        file,
-        preview: URL.createObjectURL(file),
-        status: "waiting" as const,
-        progress: 0,
-      }))
-    );
+    if (files.length === 0) return;
+
+    const newJobs: UploadJob[] = files.map((file) => ({
+      id: `${Date.now()}-${Math.random()}`,
+      file,
+      preview: URL.createObjectURL(file),
+      status: "waiting" as const,
+      progress: 0,
+    }));
 
     setJobs(newJobs);
-    runBatch(newJobs);
+    // Ejecutar sin bloquear
+    runSequential(newJobs);
   }, []);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
@@ -151,7 +193,8 @@ export default function BulkUploadModal({ open, onClose, onSuccess }: BulkUpload
 
   const handleClose = () => {
     if (running) {
-      if (!confirm("¿Cerrar? Se van a seguir procesando las prendas.")) return;
+      if (!confirm("¿Cancelar? Las prendas ya subidas quedan guardadas.")) return;
+      cancelRef.current = true;
     }
     setJobs([]);
     onClose();
@@ -159,6 +202,8 @@ export default function BulkUploadModal({ open, onClose, onSuccess }: BulkUpload
 
   const doneCount = jobs.filter((j) => j.status === "done").length;
   const errorCount = jobs.filter((j) => j.status === "error").length;
+  const currentJob = jobs.find((j) => j.status === "uploading" || j.status === "analyzing");
+  const currentIndex = currentJob ? jobs.indexOf(currentJob) + 1 : doneCount + errorCount;
 
   if (!open) return null;
 
@@ -173,7 +218,8 @@ export default function BulkUploadModal({ open, onClose, onSuccess }: BulkUpload
             <h2 className="font-display font-bold text-lg">Subir varias prendas</h2>
             {jobs.length > 0 && (
               <p className="text-xs text-muted mt-0.5">
-                {doneCount}/{jobs.length} completadas {errorCount > 0 && `· ${errorCount} con error`}
+                {running ? `Procesando ${currentIndex}/${jobs.length}` : `${doneCount}/${jobs.length} completadas`}
+                {errorCount > 0 && ` · ${errorCount} con error`}
               </p>
             )}
           </div>
@@ -222,24 +268,24 @@ export default function BulkUploadModal({ open, onClose, onSuccess }: BulkUpload
                 <input {...getInputProps()} />
                 <div className="text-3xl mb-2">🖼️</div>
                 <p className="text-sm text-muted">
-                  {isDragActive ? "Soltá las imágenes acá" : "Arrastrá o tocá para elegir varias de la galería"}
+                  {isDragActive ? "Soltá las imágenes acá" : "Arrastrá o tocá para elegir varias"}
                 </p>
                 <p className="text-xs text-muted/60 mt-1">Podés seleccionar múltiples · JPG, PNG, WebP</p>
               </div>
 
               <div className="card p-4 bg-tag/50 text-xs text-muted space-y-1">
                 <p className="font-medium text-ink">Cómo funciona:</p>
-                <p>1. Elegís todas las fotos de una</p>
-                <p>2. Se procesan de a 3 al mismo tiempo</p>
-                <p>3. Claude analiza cada prenda automáticamente</p>
-                <p>4. Al terminar las revisás en el catálogo</p>
+                <p>• Se procesan una por una para no saturar</p>
+                <p>• Si algo falla, reintenta automáticamente</p>
+                <p>• Podés cancelar en cualquier momento</p>
+                <p>• Las prendas subidas no se pierden aunque cierres</p>
               </div>
             </div>
           ) : (
             <div className="space-y-2">
               {jobs.map((job) => (
                 <div key={job.id} className="card p-3 flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-lg overflow-hidden border border-border relative shrink-0">
+                  <div className="w-12 h-12 rounded-lg overflow-hidden border border-border relative shrink-0 bg-tag">
                     <Image src={job.preview} alt="" fill className="object-cover" sizes="48px" />
                     {job.status === "done" && (
                       <div className="absolute inset-0 bg-green-500/60 flex items-center justify-center">
@@ -256,23 +302,23 @@ export default function BulkUploadModal({ open, onClose, onSuccess }: BulkUpload
                   <div className="flex-1 min-w-0">
                     {job.status === "done" ? (
                       <>
-                        <p className="text-sm font-medium capitalize">
-                          {job.category || "Prenda"} {job.brand && `· ${job.brand}`}
+                        <p className="text-sm font-medium capitalize truncate">
+                          {job.category || "Prenda subida"} {job.brand && `· ${job.brand}`}
                         </p>
                         {job.colorNames && job.colorNames.length > 0 && (
-                          <p className="text-xs text-muted capitalize">
+                          <p className="text-xs text-muted capitalize truncate">
                             {job.colorNames.join(", ")}
                           </p>
                         )}
                       </>
                     ) : job.status === "error" ? (
-                      <p className="text-xs text-red-500">{job.error || "Error"}</p>
+                      <p className="text-xs text-red-500 truncate">{job.error || "Error"}</p>
                     ) : (
                       <>
                         <p className="text-xs text-muted">
-                          {job.status === "waiting" && "En espera..."}
-                          {job.status === "uploading" && "Subiendo imagen..."}
-                          {job.status === "analyzing" && "Analizando con IA..."}
+                          {job.status === "waiting" && "⏳ En espera..."}
+                          {job.status === "uploading" && "📤 Subiendo..."}
+                          {job.status === "analyzing" && "🧠 Analizando..."}
                         </p>
                         <div className="w-full bg-tag rounded-full h-1.5 mt-1.5 overflow-hidden">
                           <div
@@ -289,7 +335,6 @@ export default function BulkUploadModal({ open, onClose, onSuccess }: BulkUpload
           )}
         </div>
 
-        {/* Footer */}
         {jobs.length > 0 && !running && (
           <div className="border-t border-border p-4">
             <button onClick={handleClose} className="btn-primary w-full">
