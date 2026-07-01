@@ -1,19 +1,18 @@
 import { FashionItem, OutfitCombo, EngineContext, CATEGORY_TO_TYPE } from "./types";
 import { scoreOutfit } from "./scoring";
 
-// ── Generate outfits ──────────────────────────────────
+// ── Generate outfits with variety and randomization ──
 
 export function generateOutfits(
   allItems: FashionItem[],
   context: EngineContext
 ): OutfitCombo[] {
-  const minScore = context.minScore ?? 70;
+  const minScore = context.minScore ?? 65;
   const maxResults = context.maxResults ?? 10;
 
-  // Filter available items
   const available = allItems.filter((i) => !i.inLaundry);
 
-  // Group by type
+  // Group by type — use prendaType if set, otherwise fallback
   const byType: Record<string, FashionItem[]> = {
     superior: [],
     inferior: [],
@@ -27,33 +26,42 @@ export function generateOutfits(
     if (byType[type]) byType[type].push(item);
   });
 
-  // Need at least top + bottom + shoes for a valid outfit
   if (byType.superior.length === 0 || byType.inferior.length === 0) {
     return [];
   }
 
-  const combos: OutfitCombo[] = [];
-  const maxCombos = 500; // cap to avoid explosion
-  let evaluated = 0;
+  // Shuffle each type for variety across calls
+  const shuffle = <T,>(arr: T[]): T[] => {
+    const a = [...arr];
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  };
 
-  // Generate combinations: top × bottom × shoes (× optional abrigo)
-  const shoes = byType.calzado.length > 0 ? byType.calzado : [null];
+  const tops = shuffle(byType.superior);
+  const bottoms = shuffle(byType.inferior);
+  const shoes = byType.calzado.length > 0 ? shuffle(byType.calzado) : [null];
   const abrigos = context.weather === "frio" || context.weather === "lluvia"
-    ? (byType.abrigo.length > 0 ? [...byType.abrigo, null] : [null])
+    ? (byType.abrigo.length > 0 ? [...shuffle(byType.abrigo), null] : [null])
     : [null];
 
-  for (const top of byType.superior) {
-    for (const bottom of byType.inferior) {
+  const combos: OutfitCombo[] = [];
+  const maxCombos = 500;
+  let evaluated = 0;
+
+  for (const top of tops) {
+    for (const bottom of bottoms) {
+      // Skip if vestido/enterito (they're complete outfits by themselves)
+      if (["vestido", "enterito"].includes(bottom.category)) continue;
+
       for (const shoe of shoes) {
         for (const abrigo of abrigos) {
           if (evaluated >= maxCombos) break;
           evaluated++;
 
           const items = [top, bottom, shoe, abrigo].filter(Boolean) as FashionItem[];
-
-          // Skip if vestido/enterito + top (redundant)
-          if (["vestido", "enterito"].includes(bottom.category) && top) continue;
-
           const breakdown = scoreOutfit(items, context);
 
           if (breakdown.total >= minScore) {
@@ -64,41 +72,40 @@ export function generateOutfits(
     }
   }
 
-  // Sort by score descending
+  // Sort by score
   combos.sort((a, b) => b.score - a.score);
 
-  // Diversify: avoid too many similar outfits
+  // Diversify — no dos outfits pueden compartir más del 50% de prendas
   const diversified = diversifyResults(combos, maxResults);
 
-  return diversified;
+  // Add controlled randomness — after picking top by score, shuffle a bit
+  // so the same query doesn't always return outfits in the exact same order
+  return addVariety(diversified, maxResults);
 }
 
-// ── Diversification ───────────────────────────────────
-// Avoid returning 10 outfits that only differ by one item
+// ── Diversification: avoid clones ─────────────────────
 
 function diversifyResults(combos: OutfitCombo[], max: number): OutfitCombo[] {
   if (combos.length <= max) return combos;
 
-  const selected: OutfitCombo[] = [combos[0]]; // always include best
+  const selected: OutfitCombo[] = [];
+  const candidates = [...combos];
 
-  for (const combo of combos.slice(1)) {
-    if (selected.length >= max) break;
+  while (selected.length < max && candidates.length > 0) {
+    const next = candidates.shift();
+    if (!next) break;
 
-    // Check similarity with already selected
     const tooSimilar = selected.some((sel) => {
-      const sharedItems = combo.items.filter((i) =>
+      const shared = next.items.filter((i) =>
         sel.items.some((s) => s.id === i.id)
       );
-      // If 80%+ items are the same, skip
-      return sharedItems.length / combo.items.length > 0.7;
+      return shared.length / next.items.length > 0.5;
     });
 
-    if (!tooSimilar) {
-      selected.push(combo);
-    }
+    if (!tooSimilar) selected.push(next);
   }
 
-  // If we didn't get enough diverse ones, fill with remaining
+  // If we didn't get enough diverse ones, fill with remaining top-scored
   if (selected.length < max) {
     for (const combo of combos) {
       if (selected.length >= max) break;
@@ -109,21 +116,20 @@ function diversifyResults(combos: OutfitCombo[], max: number): OutfitCombo[] {
   return selected;
 }
 
-// ── Quick recommendation (for Random/Clima) ───────────
+// ── Variety: add controlled randomness ────────────────
 
-export function quickRecommend(
-  allItems: FashionItem[],
-  context: EngineContext
-): OutfitCombo | null {
-  const results = generateOutfits(allItems, {
-    ...context,
-    maxResults: 5,
-    minScore: 60, // lower threshold for single recommendation
-  });
+function addVariety(combos: OutfitCombo[], max: number): OutfitCombo[] {
+  if (combos.length <= 3) return combos;
 
-  if (results.length === 0) return null;
+  // Keep top 2 in order, then shuffle the rest
+  const top = combos.slice(0, 2);
+  const rest = combos.slice(2);
+  
+  // Weighted shuffle: high scores stay near top but with variance
+  const shuffledRest = rest
+    .map((c) => ({ combo: c, weight: c.score + Math.random() * 8 }))
+    .sort((a, b) => b.weight - a.weight)
+    .map((x) => x.combo);
 
-  // Pick randomly from top 3 for variety
-  const topN = results.slice(0, Math.min(3, results.length));
-  return topN[Math.floor(Math.random() * topN.length)];
+  return [...top, ...shuffledRest].slice(0, max);
 }

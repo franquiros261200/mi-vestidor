@@ -69,6 +69,25 @@ export default function ItemCard({ item, onUpdate }: ItemCardProps) {
     onUpdate();
   };
 
+  const [reanalyzing, setReanalyzing] = useState(false);
+  const reanalyze = async () => {
+    setReanalyzing(true);
+    try {
+      const res = await fetch("/api/reanalyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ itemId: item.id }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      toast.success("Reclasificada por IA");
+      onUpdate();
+    } catch (err: any) {
+      toast.error(err.message || "Error al reanalizar");
+    }
+    setReanalyzing(false);
+  };
+
   return (
     <>
       {/* Card */}
@@ -188,14 +207,22 @@ export default function ItemCard({ item, onUpdate }: ItemCardProps) {
               </div>
 
               {/* Actions */}
-              <div className="flex gap-3">
+              <div className="flex gap-2">
                 <button onClick={markWorn} className="btn-primary flex-1 text-sm">
                   Me lo puse hoy
                 </button>
                 <button
+                  onClick={reanalyze}
+                  disabled={reanalyzing}
+                  className="btn-secondary px-3 text-sm"
+                  title="Reclasificar con IA"
+                >
+                  {reanalyzing ? "..." : "🧠"}
+                </button>
+                <button
                   onClick={deleteItem}
                   disabled={deleting}
-                  className="btn-secondary px-4 text-sm text-red-500 hover:text-red-600 hover:border-red-200"
+                  className="btn-secondary px-3 text-sm text-red-500 hover:text-red-600 hover:border-red-200"
                 >
                   {deleting ? "..." : "🗑️"}
                 </button>

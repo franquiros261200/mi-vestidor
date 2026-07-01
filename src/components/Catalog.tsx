@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import ItemCard from "./ItemCard";
+import ReanalyzeBanner from "./ReanalyzeBanner";
 import { CATEGORIES, SEASONS, OCCASIONS } from "@/lib/constants";
 
 interface Item {
@@ -67,8 +68,13 @@ export default function Catalog({ refreshKey }: CatalogProps) {
 
   return (
     <div className="max-w-6xl mx-auto px-4 pb-20">
+      {/* Reanalyze banner for badly classified items */}
+      <div className="mt-4">
+        <ReanalyzeBanner onDone={fetchItems} />
+      </div>
+
       {/* Search */}
-      <div className="mt-4 mb-3">
+      <div className="mt-2 mb-3">
         <div className="relative">
           <svg
             className="absolute left-3 top-1/2 -translate-y-1/2 text-muted"

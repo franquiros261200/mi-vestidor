@@ -77,22 +77,18 @@ Si no es una prenda de ropa, intentá clasificarla lo mejor posible. Si tiene te
 
   const text = response.content[0].type === "text" ? response.content[0].text : "";
   
+  // Try to extract JSON from response (handle markdown wrapping)
+  let jsonText = text.trim();
+  const jsonMatch = jsonText.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/) || jsonText.match(/(\{[\s\S]*\})/);
+  if (jsonMatch) jsonText = jsonMatch[1];
+
   try {
-    return JSON.parse(text.trim()) as AITagResult;
-  } catch {
-    return {
-      category: "remera",
-      subcategory: null,
-      colors: [{ hex: "#000000", name: "negro" }],
-      seasons: ["todo_el_año"],
-      occasions: ["casual"],
-      material: null,
-      brand: null,
-      style: "casual",
-      formality: 3,
-      silhouette: "regular",
-      prendaType: "superior",
-      confidence: 0,
-    };
+    const parsed = JSON.parse(jsonText) as AITagResult;
+    // Validate essential fields
+    if (!parsed.category) throw new Error("Missing category");
+    return parsed;
+  } catch (err) {
+    console.error("AI parse failed:", text.substring(0, 200));
+    throw new Error("La IA no pudo clasificar esta prenda. Intentá reanalizarla.");
   }
 }
