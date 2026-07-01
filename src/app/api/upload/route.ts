@@ -18,8 +18,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Imagen requerida" }, { status: 400 });
     }
 
-    // 1. Subir a Cloudinary (siempre, es gratis)
-    const { imageUrl, publicId, thumbUrl } = await uploadImage(image);
+    // 1. Subir a Cloudinary
+    let imageUrl: string, publicId: string, thumbUrl: string;
+    try {
+      const result = await uploadImage(image);
+      imageUrl = result.imageUrl;
+      publicId = result.publicId;
+      thumbUrl = result.thumbUrl;
+    } catch (err) {
+      console.error("Cloudinary error:", err);
+      return NextResponse.json({ error: "Error al subir imagen a Cloudinary" }, { status: 500 });
+    }
 
     // 2. Ver si el usuario tiene API key de Anthropic
     const user = await prisma.user.findUnique({
@@ -30,11 +39,11 @@ export async function POST(req: NextRequest) {
     let aiResult = null;
 
     if (user?.anthropicKey) {
-      // Tiene key → analizar con Claude Vision
       try {
-        aiResult = await analyzeClothingImage(imageUrl, user.anthropicKey);
-      } catch (err) {
-        console.error("AI analysis failed:", err);
+        // Mandar base64 directo a Claude (más confiable que URL)
+        aiResult = await analyzeClothingImage(image, user.anthropicKey);
+      } catch (err: any) {
+        console.error("AI analysis failed:", err?.message || err);
         // Si falla la IA, seguimos sin ella
       }
     }
@@ -66,10 +75,10 @@ export async function POST(req: NextRequest) {
       aiSuggestions: aiResult,
       hasAI: !!aiResult,
     });
-  } catch (error) {
-    console.error("Upload error:", error);
+  } catch (error: any) {
+    console.error("Upload error:", error?.message || error);
     return NextResponse.json(
-      { error: "Error al procesar la imagen" },
+      { error: error?.message || "Error al procesar la imagen" },
       { status: 500 }
     );
   }

@@ -100,49 +100,72 @@ export default function UploadModal({ open, onClose, onSuccess }: UploadModalPro
     onClose();
   };
 
+  const compressImage = (file: File, maxWidth = 1200): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const img = new window.Image();
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        img.onload = () => {
+          const canvas = document.createElement("canvas");
+          let w = img.width;
+          let h = img.height;
+          if (w > maxWidth) { h = (h * maxWidth) / w; w = maxWidth; }
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext("2d")!;
+          ctx.drawImage(img, 0, 0, w, h);
+          resolve(canvas.toDataURL("image/jpeg", 0.8));
+        };
+        img.onerror = reject;
+        img.src = e.target?.result as string;
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  };
+
   const processFile = useCallback(async (file: File) => {
-    const reader = new FileReader();
-    reader.onload = async () => {
-      const base64 = reader.result as string;
+    try {
+      const base64 = await compressImage(file);
       setPreview(base64);
       setStep("analyzing");
 
-      try {
-        const res = await fetch("/api/upload", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ image: base64 }),
-        });
+      const res = await fetch("/api/upload", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image: base64 }),
+      });
 
-        if (!res.ok) throw new Error("Error al subir");
-
-        const data = await res.json();
-        setItemId(data.item.id);
-        setHasAI(data.hasAI);
-
-        if (data.hasAI && data.aiSuggestions) {
-          const ai = data.aiSuggestions as AIResult;
-          setFormData({
-            category: ai.category,
-            subcategory: ai.subcategory,
-            seasons: ai.seasons,
-            occasions: ai.occasions,
-            material: ai.material,
-            brand: ai.brand,
-            style: ai.style || null,
-            formality: ai.formality || 3,
-            silhouette: ai.silhouette || null,
-          });
-          setSelectedColors(ai.colors);
-        }
-
-        setStep("review");
-      } catch (err) {
-        toast.error("Error al procesar la imagen");
-        setStep("upload");
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Error al subir");
       }
-    };
-    reader.readAsDataURL(file);
+
+      const data = await res.json();
+      setItemId(data.item.id);
+      setHasAI(data.hasAI);
+
+      if (data.hasAI && data.aiSuggestions) {
+        const ai = data.aiSuggestions as AIResult;
+        setFormData({
+          category: ai.category,
+          subcategory: ai.subcategory,
+          seasons: ai.seasons,
+          occasions: ai.occasions,
+          material: ai.material,
+          brand: ai.brand,
+          style: ai.style || null,
+          formality: ai.formality || 3,
+          silhouette: ai.silhouette || null,
+        });
+        setSelectedColors(ai.colors);
+      }
+
+      setStep("review");
+    } catch (err: any) {
+      toast.error(err.message || "Error al procesar la imagen");
+      setStep("upload");
+    }
   }, []);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({

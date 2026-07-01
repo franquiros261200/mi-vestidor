@@ -31,8 +31,14 @@ const PRENDA_TYPES = ["superior", "inferior", "calzado", "abrigo", "accesorio"];
 const SEASONS = ["verano", "invierno", "entretiempo", "todo_el_año"];
 const OCCASIONS = ["casual", "formal", "deporte", "salida", "trabajo", "playa", "facultad", "boliche", "cita", "gym"];
 
-export async function analyzeClothingImage(imageUrl: string, apiKey: string): Promise<AITagResult> {
+export async function analyzeClothingImage(base64Image: string, apiKey: string): Promise<AITagResult> {
   const anthropic = new Anthropic({ apiKey });
+
+  // Extraer media type y data del base64
+  const match = base64Image.match(/^data:(image\/\w+);base64,(.+)$/);
+  const mediaType = (match?.[1] || "image/jpeg") as "image/jpeg" | "image/png" | "image/gif" | "image/webp";
+  const imageData = match?.[2] || base64Image.replace(/^data:image\/\w+;base64,/, "");
+
   const response = await anthropic.messages.create({
     model: "claude-sonnet-4-6",
     max_tokens: 600,
@@ -42,7 +48,7 @@ export async function analyzeClothingImage(imageUrl: string, apiKey: string): Pr
         content: [
           {
             type: "image",
-            source: { type: "url", url: imageUrl },
+            source: { type: "base64", media_type: mediaType, data: imageData },
           },
           {
             type: "text",
@@ -53,14 +59,16 @@ export async function analyzeClothingImage(imageUrl: string, apiKey: string): Pr
   "colors": [{"hex": "#XXXXXX", "name": "nombre en español"}] (máximo 3 colores dominantes),
   "seasons": array de [${SEASONS.join(", ")}],
   "occasions": array de [${OCCASIONS.join(", ")}],
-  "material": material estimado ("algodón", "poliéster", "cuero", "jean") o null,
+  "material": material estimado ("algodón", "poliéster", "cuero", "jean", "lana") o null,
   "brand": marca visible o null,
   "style": una de [${STYLES.join(", ")}],
   "formality": número 1 a 5 (1=muy casual, 5=muy formal),
   "silhouette": una de [${SILHOUETTES.join(", ")}],
   "prendaType": una de [${PRENDA_TYPES.join(", ")}],
   "confidence": 0.0 a 1.0 qué tan seguro estás
-}`,
+}
+
+Si no es una prenda de ropa, intentá clasificarla lo mejor posible. Si tiene textura o estampado, describí los colores dominantes.`,
           },
         ],
       },
