@@ -130,35 +130,48 @@ export default function UploadModal({ open, onClose, onSuccess }: UploadModalPro
       setPreview(base64);
       setStep("analyzing");
 
-      const res = await fetch("/api/upload", {
+      // Paso 1: Subir a Cloudinary (rápido)
+      const uploadRes = await fetch("/api/upload", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ image: base64 }),
       });
 
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
+      if (!uploadRes.ok) {
+        const err = await uploadRes.json().catch(() => ({}));
         throw new Error(err.error || "Error al subir");
       }
 
-      const data = await res.json();
-      setItemId(data.item.id);
-      setHasAI(data.hasAI);
+      const uploadData = await uploadRes.json();
+      setItemId(uploadData.item.id);
 
-      if (data.hasAI && data.aiSuggestions) {
-        const ai = data.aiSuggestions as AIResult;
-        setFormData({
-          category: ai.category,
-          subcategory: ai.subcategory,
-          seasons: ai.seasons,
-          occasions: ai.occasions,
-          material: ai.material,
-          brand: ai.brand,
-          style: ai.style || null,
-          formality: ai.formality || 3,
-          silhouette: ai.silhouette || null,
+      // Paso 2: Analizar con IA (puede fallar sin romper nada)
+      try {
+        const aiRes = await fetch("/api/ai-tag", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ image: base64, itemId: uploadData.item.id }),
         });
-        setSelectedColors(ai.colors);
+        const aiData = await aiRes.json();
+
+        if (aiData.hasAI && aiData.aiSuggestions) {
+          setHasAI(true);
+          const ai = aiData.aiSuggestions as AIResult;
+          setFormData({
+            category: ai.category,
+            subcategory: ai.subcategory,
+            seasons: ai.seasons,
+            occasions: ai.occasions,
+            material: ai.material,
+            brand: ai.brand,
+            style: ai.style || null,
+            formality: ai.formality || 3,
+            silhouette: ai.silhouette || null,
+          });
+          setSelectedColors(ai.colors);
+        }
+      } catch {
+        // IA falló, sigue con manual
       }
 
       setStep("review");
